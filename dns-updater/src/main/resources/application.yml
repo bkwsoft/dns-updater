@@ -1,0 +1,20 @@
+spring:
+  pid:
+    fail-on-write-error: true
+    file: /Users/n0076839/dns-updater.pid
+  main:
+    web-application-type: none
+      
+dynamic-dns:
+  userId: userid
+  password: "password"
+  domain: example.com
+  
+  hosts:
+    unifi:
+      hostName: unifi
+      interfaceName: eno1
+    tv-headend:
+      hostName: tv-headend
+      interfaceName: eno2
+
