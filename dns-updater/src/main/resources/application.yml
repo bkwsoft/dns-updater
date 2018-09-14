@@ -1,7 +1,7 @@
 spring:
   pid:
     fail-on-write-error: true
-    file: /Users/n0076839/dns-updater.pid
+    file: /home/brian/dns-updater.pid
   main:
     web-application-type: none
       

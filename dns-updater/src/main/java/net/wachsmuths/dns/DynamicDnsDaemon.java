@@ -4,7 +4,10 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.URI;
 import java.net.UnknownHostException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -12,8 +15,11 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import net.wachsmuths.dns.DynamicDnsProperties.Host;
 
@@ -35,7 +41,9 @@ public class DynamicDnsDaemon {
 			
 			if (address != null) {
 				LOG.info("\t\t" + address);
-				isNewIP(host, address);
+				if (isNewIP(host, address)) {
+					updateDNS(host.getHostName(), address);
+				}
 			}
 		}
 	}
@@ -52,7 +60,9 @@ public class DynamicDnsDaemon {
 			for (Enumeration<InetAddress> enumIpAddr = iface.getInetAddresses(); enumIpAddr.hasMoreElements();) {
 				 InetAddress address = enumIpAddr.nextElement();
 				 
-				 if (address instanceof Inet6Address && ((Inet6Address) address).getScopeId() == 0) {
+				 LOG.info("Checking IP for " + address.getHostAddress());
+				 if (address instanceof Inet6Address && !address.isLinkLocalAddress()) {
+					 LOG.info("Found Global IPV6 IP!!!");
 					 return address.getHostAddress().split("%")[0];
 				 }
 			}
@@ -92,7 +102,7 @@ public class DynamicDnsDaemon {
 			InetAddress[] allAddresses = InetAddress.getAllByName(host.getHostName() + "." + dnsProperties.getDomain());
 			
 			for (InetAddress hostAddress : allAddresses) {
-				if (hostAddress instanceof Inet6Address && ((Inet6Address) hostAddress).getScopedInterface().getName().equals(host.getInterfaceName())) {
+				if (hostAddress instanceof Inet6Address) {
 					return hostAddress.getHostAddress().split("%")[0];
 				}
 			}
@@ -102,5 +112,40 @@ public class DynamicDnsDaemon {
 		}
 
 		return null;
+	}
+	
+	protected String hash(String password) throws NoSuchAlgorithmException {
+		MessageDigest md = MessageDigest.getInstance("MD5");
+		md.update(password.getBytes());
+		byte[] digest = md.digest();
+		StringBuffer sb = new StringBuffer();
+		
+		for (byte b : digest) {
+			sb.append(String.format("%02x", b & 0xff));
+		}
+		
+		return sb.toString();
+	}
+	
+	private void updateDNS(String hostName, String address) {
+		LOG.info("Updating DNS alias for host: " + hostName + " to IPV6: " + address);
+		
+		RestTemplate template = new RestTemplate();
+		
+		URI url;
+		try {
+			url = UriComponentsBuilder.fromUriString("https://api.dynu.com/nic/update")
+					.queryParam("hostname", dnsProperties.getDomain())
+					.queryParam("alias", hostName)
+					.queryParam("myipv6", address)
+					.queryParam("username", dnsProperties.getUserId())
+					.queryParam("password", hash(dnsProperties.getPassword()))
+					.build().toUri();
+		} catch (NoSuchAlgorithmException e) {
+			throw new RuntimeException("Error creating DNS Update URI");
+		}
+		
+		LOG.error("Calling: " + url.toString());
+		//template.getForEntity(url, String.class);
 	}
 }
